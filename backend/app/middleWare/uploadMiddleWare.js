@@ -2,8 +2,7 @@
 const multer = require("multer");
 
 const upload = multer({
-  // Keep files in memory temporarily.
-  // The controller will save them to local storage.
+
   storage: multer.memoryStorage(),
 
   // Maximum file size: 5 MB per image.

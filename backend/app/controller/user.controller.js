@@ -94,7 +94,7 @@ const handleControllerError = (res, error) => {
 
 const registerUser = async (req, res) => {
   try {
-    const { name, email, password, phone } = req.body || {};
+    const { name, email, password, phone , role } = req.body || {};
 
     if (
       typeof name !== "string" ||
@@ -173,7 +173,7 @@ const registerUser = async (req, res) => {
       email: normalizedEmail,
       password: hashedPassword,
       phone: phone?.trim() || "",
-      role: "user",
+      role:role|| "user",
     });
 
     const token = signToken(user._id);

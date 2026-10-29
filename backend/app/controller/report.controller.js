@@ -7,9 +7,10 @@ const { uploadLocal, deleteLocal } = require("../../lib/fileupload.js");
 const isValidId = (id) => mongoose.isValidObjectId(id);
 
 const parseCoordinates = (coordinates) => {
+  console.log(coordinates);
   if (typeof coordinates === "string") {
     try {
-      return JSON.parse(coordinates);
+      return coordinates.split(",").map((value) => parseFloat(value.trim()));
     } catch {
       return null;
     }
@@ -30,6 +31,10 @@ const isValidCoordinates = (coordinates) =>
   coordinates[1] <= 90;
 
 const validateImages = (files = []) => {
+  if (!Array.isArray(files)) {
+    return "Invalid file upload format";
+  }
+
   if (files.length > 3) {
     return "You can upload a maximum of 3 images";
   }
@@ -45,13 +50,17 @@ const validateImages = (files = []) => {
     return "Only JPEG, PNG, WEBP and GIF images are allowed";
   }
 
+  if (files.some((file) => file.truncated || file.size > 5 * 1024 * 1024)) {
+    return "Each image must be 5 MB or smaller";
+  }
+
   return null;
 };
 
 // Populate report references.
 const populateReport = (query) =>
   query
-    .populate("user", "name email")
+    .populate("user", "name email") 
     .populate("cleanedBy", "name")
     .populate("files");
 
@@ -105,13 +114,24 @@ const removeFiles = async (fileIds = []) => {
   });
 };
 
+
+const getUploadedFiles = (req) => {
+  const incoming = req.files?.files;
+
+  if (!incoming) return [];
+
+  return Array.isArray(incoming) ? incoming : [incoming];
+};
+
 // 1. Create a report
 const createReport = async (req, res) => {
   let savedFiles = [];
 
   try {
-    const { description } = req.body;
+    const { description ,title , category} = req.body;
     const coordinates = parseCoordinates(req.body.coordinates);
+
+    console.log(coordinates);
 
     if (typeof description !== "string" || !description.trim()) {
       return res.status(400).json({
@@ -127,7 +147,7 @@ const createReport = async (req, res) => {
       });
     }
 
-    const files = req.files || [];
+    const files = getUploadedFiles(req);
     const imageError = validateImages(files);
 
     if (imageError) {
@@ -142,6 +162,8 @@ const createReport = async (req, res) => {
     const report = await Report.create({
       user: req.user._id,
       description: description.trim(),
+      title: title?.trim() || "",
+      category: category?.trim() || "",
       files: savedFiles.map((file) => file._id),
       location: {
         type: "Point",
@@ -342,6 +364,7 @@ const getNearbyReports = async (req, res) => {
 };
 
 // 6. Update a report and optionally add/remove images
+
 const updateReport = async (req, res) => {
   let newFiles = [];
 
@@ -364,6 +387,7 @@ const updateReport = async (req, res) => {
       });
     }
 
+    // Only the report owner can update it.
     if (report.user.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
@@ -371,6 +395,7 @@ const updateReport = async (req, res) => {
       });
     }
 
+    // Only pending reports can be edited.
     if (report.status !== "pending") {
       return res.status(400).json({
         success: false,
@@ -378,6 +403,22 @@ const updateReport = async (req, res) => {
       });
     }
 
+    // Update title.
+    if (req.body.title !== undefined) {
+      if (
+        typeof req.body.title !== "string" ||
+        !req.body.title.trim()
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Title cannot be empty",
+        });
+      }
+
+      report.title = req.body.title.trim();
+    }
+
+    // Update description.
     if (req.body.description !== undefined) {
       if (
         typeof req.body.description !== "string" ||
@@ -392,6 +433,22 @@ const updateReport = async (req, res) => {
       report.description = req.body.description.trim();
     }
 
+    // Update category.
+    if (req.body.category !== undefined) {
+      if (
+        typeof req.body.category !== "string" ||
+        !req.body.category.trim()
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Category cannot be empty",
+        });
+      }
+
+      report.category = req.body.category.trim();
+    }
+
+    // Update coordinates.
     if (req.body.coordinates !== undefined) {
       const coordinates = parseCoordinates(req.body.coordinates);
 
@@ -405,6 +462,7 @@ const updateReport = async (req, res) => {
       report.location.coordinates = coordinates;
     }
 
+    // Parse image IDs to remove.
     let removeFileIds = req.body.removeFileIds || [];
 
     if (typeof removeFileIds === "string") {
@@ -441,7 +499,8 @@ const updateReport = async (req, res) => {
       });
     }
 
-    const files = req.files || [];
+    // Validate newly uploaded images.
+    const files = getUploadedFiles(req);
     const imageError = validateImages(files);
 
     if (imageError) {
@@ -452,8 +511,11 @@ const updateReport = async (req, res) => {
     }
 
     const uniqueRemoveIds = [...new Set(removeFileIds)];
+
     const remainingCount =
-      report.files.length - uniqueRemoveIds.length + files.length;
+      report.files.length -
+      uniqueRemoveIds.length +
+      files.length;
 
     if (remainingCount > 3) {
       return res.status(400).json({
@@ -462,6 +524,7 @@ const updateReport = async (req, res) => {
       });
     }
 
+    // Save newly uploaded images locally.
     newFiles = await saveFiles(files);
 
     report.files = report.files.filter(
@@ -472,7 +535,7 @@ const updateReport = async (req, res) => {
 
     await report.save();
 
-    // Delete removed files after the report update succeeds.
+    // Delete removed images after the report is saved.
     await removeFiles(uniqueRemoveIds);
 
     const updatedReport = await populateReport(
@@ -486,7 +549,27 @@ const updateReport = async (req, res) => {
     });
   } catch (error) {
     if (newFiles.length) {
-      await removeFiles(newFiles.map((file) => file._id));
+      try {
+        // Avoid deleting newly uploaded images if the report
+        // was already saved successfully.
+        const currentReport = await Report.findById(req.params.id);
+
+        const referencedIds = new Set(
+          (currentReport?.files || []).map((fileId) =>
+            fileId.toString()
+          )
+        );
+
+        const unreferencedFiles = newFiles
+          .filter((file) => !referencedIds.has(file._id.toString()))
+          .map((file) => file._id);
+
+        if (unreferencedFiles.length) {
+          await removeFiles(unreferencedFiles);
+        }
+      } catch (cleanupError) {
+        console.error("New file cleanup error:", cleanupError.message);
+      }
     }
 
     console.error("Update report error:", error.message);
@@ -497,6 +580,7 @@ const updateReport = async (req, res) => {
     });
   }
 };
+
 
 // 7. Delete a report and its images
 const deleteReport = async (req, res) => {

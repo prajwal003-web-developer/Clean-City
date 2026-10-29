@@ -3,10 +3,9 @@ const fs = require("fs/promises");
 const path = require("path");
 const { randomUUID } = require("crypto");
 
-// Upload file locally
 const uploadLocal = async (file, folder = "reports") => {
-  if (!file?.buffer) {
-    throw new Error("A valid uploaded file is required");
+  if (!file || file.truncated || typeof file.mv !== "function") {
+    throw new Error("Invalid or oversized uploaded file");
   }
 
   const allowedTypes = {
@@ -23,62 +22,90 @@ const uploadLocal = async (file, folder = "reports") => {
   }
 
   const safeFolder = path.basename(folder);
-
-  const uploadDir = path.join(
-    process.cwd(),
-    "uploads",
-    safeFolder
-  );
+  const uploadDir = path.join(process.cwd(), "uploads", safeFolder);
 
   await fs.mkdir(uploadDir, { recursive: true });
 
   const filename = `${randomUUID()}${extension}`;
   const filePath = path.join(uploadDir, filename);
 
-  await fs.writeFile(filePath, file.buffer, { flag: "wx" });
+  await file.mv(filePath);
 
   const serverUrl = (
     process.env.SERVER_URL ||
     `http://localhost:${process.env.PORT || 5000}`
   ).replace(/\/+$/, "");
 
-  const url = `${serverUrl}/uploads/${safeFolder}/${filename}`;
-
   return {
     filename,
     fileID: filename,
     path: filePath,
-    url,
+    url: `${serverUrl}/uploads/${safeFolder}/${filename}`,
   };
 };
 
-// Delete locally stored file
 const deleteLocal = async (fileID, folder = "reports") => {
   if (
-    !fileID ||
     typeof fileID !== "string" ||
+    !fileID ||
     path.basename(fileID) !== fileID
   ) {
     throw new Error("Invalid file ID");
   }
 
-  const safeFolder = path.basename(folder);
-
   const filePath = path.join(
     process.cwd(),
     "uploads",
-    safeFolder,
+    path.basename(folder),
     fileID
   );
 
   await fs.unlink(filePath).catch((error) => {
-    if (error.code !== "ENOENT") {
-      throw error;
-    }
+    if (error.code !== "ENOENT") throw error;
   });
 };
 
-module.exports = {
-  uploadLocal,
-  deleteLocal,
+// module.exports = { uploadLocal, deleteLocal };
+
+
+
+
+const cloudinary = require("../lib/Cloudinary.js");
+
+const uploadCloudinary = async (file) => {
+  if (!file || !file.tempFilePath) {
+    throw new Error("Invalid file or temporary file path");
+  }
+
+  const result = await cloudinary.uploader.upload(file.tempFilePath, {
+    folder: "cleancity/reports",
+    resource_type: "image",
+    allowed_formats: ["jpg", "jpeg", "png", "webp", "gif"],
+  });
+
+  console.log(result);
+  return {
+    url: result.secure_url,
+    fileID: result.public_id,
+  };
 };
+
+const deleteCloudinary = async (publicId) => {
+  if (!publicId) {
+    throw new Error("Cloudinary public ID is required");
+  }
+
+  const result = await cloudinary.uploader.destroy(publicId, {
+    resource_type: "image",
+    invalidate: true,
+  });
+
+  return result.result === "ok" || result.result === "not found";
+};
+
+module.exports = {
+  uploadCloudinary,
+  deleteCloudinary,
+  uploadLocal, deleteLocal
+};
+

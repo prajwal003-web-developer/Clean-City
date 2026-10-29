@@ -5,6 +5,9 @@ const cors = require("cors");
 const multer = require("multer");
 require("dotenv").config();
 
+const fileUpload = require("express-fileupload");
+const path = require("path");
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -32,6 +35,21 @@ const upload = multer({
   },
 });
 
+
+
+app.use(
+  fileUpload({
+    useTempFiles: true,
+    tempFileDir: path.join(process.cwd(), "tmp"),
+    limits: {
+      fileSize: 5 * 1024 * 1024, // 5 MB per file
+      files: 3,                  // Maximum 3 files
+    },
+    abortOnLimit: true,
+    createParentPath: true,
+  })
+);
+
 // Test route
 app.get("/", (req, res) => {
   res.status(200).json({
@@ -42,7 +60,7 @@ app.get("/", (req, res) => {
 
 // Test file upload route
 app.use('/api/user' , userRoutes)
-app.use('/api/report' ,userAuth ,  reportRoutes)
+app.use('/api/reports' ,userAuth ,  reportRoutes)
 
 
 // Connect MongoDB and start server

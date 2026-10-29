@@ -26,8 +26,8 @@ const reportSchema = new mongoose.Schema(
     // Cloudinary image URLs
     files: [
       {
-        type: String,
-        trim: true,
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "File",
       },
     ],
 
@@ -62,7 +62,18 @@ const reportSchema = new mongoose.Schema(
       enum: ["pending", "in_progress", "resolved"],
       default: "pending",
     },
+    title: {
+      type: String,
+      required: [true, "Title is required"],
+      trim: true,
+    },
+    category: {
+      type: String,
+      required: [true, "Category is required"],
+      trim: true,
+    },
   },
+
   { timestamps: true }
 );
 

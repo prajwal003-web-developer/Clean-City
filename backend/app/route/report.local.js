@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const path = require("path");
 
 const {
   createReport,
@@ -12,7 +13,8 @@ const {
   joinCleanup,
   leaveCleanup,
   updateReportStatus,
-} = require("../controller/report.controller.js");
+  getReportsThatIJoined,
+} = require("../controller/cloud_report.controller.js");
 
 const ngoMiddleware = require("../middleWare/ngo.middleware.js");
 const userMiddleware = require("../middleWare/user.middleware.js");
@@ -26,17 +28,20 @@ router.get("/nearby", getNearbyReports);
 // Protected routes — place before /:id
 router.get("/my-reports", userMiddleware, getMyReports);
 
+router.get("/joined", userMiddleware, getReportsThatIJoined);
+
+
 router.post(
   "/",
   userMiddleware,
-  upload.array("files", 3),
+  express.static(path.join(process.cwd(), "uploads")),
   createReport
 );
 
 router.patch(
   "/:id",
   userMiddleware,
-  upload.array("files", 3),
+ express.static(path.join(process.cwd(), "uploads")),
   updateReport
 );
 
