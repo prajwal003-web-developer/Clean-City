@@ -19,7 +19,7 @@ const userAuth = require("./app/middleWare/middleware.js").userAuth;
 // Middleware
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin: process.env.CLIENT_URL || ["http://localhost:5173" , 'https://cleancity.vercel.app'],
     credentials: true,
   })
 );
