@@ -8,6 +8,11 @@ require("dotenv").config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+const userRoutes = require("./app/route/user.route.js");
+const reportRoutes = require("./app/route/report.local.js");
+
+const userAuth = require("./app/middleWare/middleware.js").userAuth;
+
 // Middleware
 app.use(
   cors({
@@ -36,24 +41,9 @@ app.get("/", (req, res) => {
 });
 
 // Test file upload route
-app.post("/api/upload", upload.single("file"), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({
-      success: false,
-      message: "Please upload a file.",
-    });
-  }
+app.use('/api/user' , userRoutes)
+app.use('/api/report' ,userAuth ,  reportRoutes)
 
-  res.status(200).json({
-    success: true,
-    message: "File received successfully!",
-    file: {
-      originalName: req.file.originalname,
-      mimeType: req.file.mimetype,
-      size: req.file.size,
-    },
-  });
-});
 
 // Connect MongoDB and start server
 const startServer = async () => {
@@ -64,7 +54,7 @@ const startServer = async () => {
 
     console.log(`MongoDB connected: ${process.env.DATABASE_NAME}`);
 
-    app.listen(PORT, () => {
+    app.listen(PORT,"0.0.0.0", () => {
       console.log(`Server running on http://localhost:${PORT}`);
     });
   } catch (error) {
